@@ -41,7 +41,8 @@ jobs:
 
   build:
     name: build (${{ matrix.target }})
-    needs: test
+    # No `needs: test` — build matrix runs in parallel with test. The
+    # matrix is the slow path and the test job is the fast gate.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
