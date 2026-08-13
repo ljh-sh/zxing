@@ -1,0 +1,130 @@
+# Tag-triggered release pipeline.
+#
+# Triggered by a `v*` tag. Builds all 6 targets, attaches binaries +
+# SHA256SUMS + cosign signatures to a GitHub Release.
+#
+# Per `x-cmd-build-design` convention: every release artifact is
+# signed with `cosign sign-blob` and ships a `*.sigstore.json` next to
+# it. The tarball contains one binary + README + LICENSE.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write   # required for sigstore / cosign keyless signing
+  attestations: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            extra-deps: musl-tools
+            archive: tar.xz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            extra-deps: musl-tools
+            archive: tar.xz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.xz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.xz
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            archive: zip
+          - os: windows-latest
+            target: aarch64-pc-windows-gnu
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compile deps (Linux musl)
+        if: matrix.extra-deps
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.extra-deps }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }} --locked
+
+      - name: Strip + package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT="zxing-${{ matrix.target }}"
+          mkdir -p "$ARTIFACT"
+          cp "target/${{ matrix.target }}/release/zxing"* "$ARTIFACT/"
+          cp README.md "$ARTIFACT/"
+          cp LICENSE "$ARTIFACT/"
+          if [[ "${{ matrix.archive }}" == "tar.xz" ]]; then
+            tar -cJf "$ARTIFACT.tar.xz" "$ARTIFACT"
+          else
+            (cd "$ARTIFACT" && zip -r "../$ARTIFACT.zip" .)
+          fi
+          sha256sum "$ARTIFACT.tar.xz" "$ARTIFACT.zip" 2>/dev/null | \
+              grep -v 'No such' > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zxing-${{ matrix.target }}
+          path: |
+            zxing-${{ matrix.target }}.tar.xz
+            zxing-${{ matrix.target }}.zip
+            SHA256SUMS.txt
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate combined SHA256SUMS
+        shell: bash
+        run: |
+          cd artifacts
+          cat */SHA256SUMS.txt | sort -u > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Sign with cosign
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for f in artifacts/*.{tar.xz,zip}; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --bundle "${f}.sigstore.json" \
+              "$f"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/SHA256SUMS.txt
+            artifacts/**/*.tar.xz
+            artifacts/**/*.tar.xz.sig
+            artifacts/**/*.tar.xz.sigstore.json
+            artifacts/**/*.zip
+            artifacts/**/*.zip.sig
+            artifacts/**/*.zip.sigstore.json
