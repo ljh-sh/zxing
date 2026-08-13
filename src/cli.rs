@@ -5,8 +5,12 @@
 //!
 //! ```text
 //! zxing dec [OPTIONS] <IMAGE>...
-//! zxing --help | --version
+//! zxing --help | --version | --info
 //! ```
+//!
+//! `dec` is required. We keep the subcommand structure (vs. wxqr's
+//! implicit-default form) because future specialised subcommands are
+//! expected (e.g. `--only <fmt>` mode as a first-class workflow).
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -14,7 +18,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::decode::{DecodeOptions, Decoded};
+use crate::decode::{Decoded, DecodeOptions};
 use crate::format::{emit_json, emit_tsv, emit_txt};
 
 pub const VERSION_INFO: &str = concat!(
@@ -45,7 +49,6 @@ OPTIONS:
                          Formats: qr, ean-13, ean-8, upc-a, upc-e,
                                   code-128, code-39, code-93, codabar,
                                   itf, pdf417, aztec, data-matrix, maxicode
-        --points         Include the four corner points in JSON / TSV output.
     -0, --null           Treat input as NUL-separated path list.
         --files-from <P> Read paths from a file ('-' for stdin); one per line.
         -q, --quiet       Suppress per-file stderr error logs (script-friendly).
@@ -57,7 +60,7 @@ EXAMPLES:
     zxing dec --format json img1.png img2.png     # batch
     zxing dec --fast --only qr photo.png          # narrow scope
     find . -name '*.png' -print0 | \\
-        xargs -0 zxing dec --format json --files-from -
+        xargs -0 zxing dec --null --files-from -
     cat urls.txt | zxing dec --files-from -       # chardet-style batch
 ";
 
@@ -74,7 +77,6 @@ struct DecArgs {
     format: FormatKind,
     try_harder: bool,
     only: Vec<String>,
-    points: bool,
     null_sep: bool,
     files_from: Option<String>,
     quiet: bool,
@@ -133,20 +135,19 @@ fn parse_args(args: &[String]) -> Result<Subcmd> {
         "-h" | "--help" => Ok(Subcmd::Help),
         "-V" | "--version" => Ok(Subcmd::Version),
         "--info" => Ok(Subcmd::Info),
-        "dec" | "decode" => parse_dec(&args[2..]),
-        "enc" | "encode" => Err(anyhow!(
-            "'zxing enc' is not implemented in v0.1 (decode-only). Use v0.2."
+        "dec" | "decode" => parse_dec(&args[2..]).map(Subcmd::Dec),
+        other => Err(anyhow!(
+            "zxing requires a subcommand (currently only 'dec'). \
+             Got '{other}'. Try 'zxing --help'."
         )),
-        other => Err(anyhow!("unknown subcommand '{other}'")),
     }
 }
 
-fn parse_dec(argv: &[String]) -> Result<Subcmd> {
+fn parse_dec(argv: &[String]) -> Result<DecArgs> {
     let mut args = DecArgs {
         format: FormatKind::Txt,
         try_harder: true,
         only: Vec::new(),
-        points: false,
         null_sep: false,
         files_from: None,
         quiet: false,
@@ -157,8 +158,14 @@ fn parse_dec(argv: &[String]) -> Result<Subcmd> {
     while i < argv.len() {
         let a = &argv[i];
         match a.as_str() {
-            "-h" | "--help" => return Ok(Subcmd::Help),
-            "-V" | "--version" => return Ok(Subcmd::Version),
+            "-h" | "--help" => {
+                println!("{HELP}");
+                std::process::exit(0);
+            }
+            "-V" | "--version" => {
+                println!("zxing {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
             "-f" | "--format" => {
                 let v = argv
                     .get(i + 1)
@@ -182,10 +189,6 @@ fn parse_dec(argv: &[String]) -> Result<Subcmd> {
                     .ok_or_else(|| anyhow!("--only requires a value"))?;
                 args.only.push(v.clone());
                 i += 2;
-            }
-            "--points" => {
-                args.points = true;
-                i += 1;
             }
             "-0" | "--null" => {
                 args.null_sep = true;
@@ -234,7 +237,7 @@ fn parse_dec(argv: &[String]) -> Result<Subcmd> {
         ));
     }
 
-    Ok(Subcmd::Dec(args))
+    Ok(args)
 }
 
 fn read_files_from(src: &str) -> Result<String> {
@@ -262,7 +265,11 @@ fn run_dec(args: DecArgs) -> ExitCode {
                     continue;
                 }
                 had_any = true;
-                emit(&mut stdout, args.format, path, &results, args.points);
+                // Points are always emitted in the output. rxing
+                // exposes them; if a future decoder doesn't, the
+                // field is an empty array. Hiding them behind a flag
+                // would just add ceremony for the common case.
+                emit(&mut stdout, args.format, path, &results);
             }
             Err(e) => {
                 if !args.quiet {
@@ -280,11 +287,11 @@ fn run_dec(args: DecArgs) -> ExitCode {
     }
 }
 
-fn emit<W: Write>(w: &mut W, fmt: FormatKind, path: &Path, results: &[Decoded], with_points: bool) {
+fn emit<W: Write>(w: &mut W, fmt: FormatKind, path: &Path, results: &[Decoded]) {
     match fmt {
         FormatKind::Txt => emit_txt(w, path, results),
-        FormatKind::Json => emit_json(w, path, results, with_points),
-        FormatKind::Tsv => emit_tsv(w, path, results, with_points),
+        FormatKind::Json => emit_json(w, path, results),
+        FormatKind::Tsv => emit_tsv(w, path, results),
     }
     let _ = w.flush();
 }

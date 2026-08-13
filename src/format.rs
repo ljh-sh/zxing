@@ -34,15 +34,17 @@ pub fn emit_txt<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
 ///   {
 ///     "file": "qr.png",
 ///     "results": [
-///       {"format": "QR_CODE", "text": "https://x-cmd.com"}
+///       {"format": "QR_CODE", "text": "https://x-cmd.com", "points": [[40.5, 40.5], [250.5, 40.5], [250.5, 250.5], [40.5, 250.5]]}
 ///     ]
 ///   }
 /// ]
 /// ```
 ///
-/// With `--points`, each result gains a `"points"` field:
-/// `"points": [[x, y], [x, y], [x, y], [x, y]]`.
-pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_points: bool) {
+/// The `points` field is always emitted. rxing exposes the four corner
+/// points of each detection (or an empty Vec when not available);
+/// we surface them unconditionally. Hiding them behind a flag would
+/// just add ceremony for the common case.
+pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
     let f = file.display().to_string();
     // We hand-write JSON because we want stable formatting and zero
     // dependencies. Every text and file string is escaped properly.
@@ -53,50 +55,34 @@ pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_poi
         if i > 0 {
             let _ = write!(w, ", ");
         }
-        write!(w, "{{").ok();
+        let _ = write!(w, "{{");
         write_str_obj(w, "format", format_name(r.format));
         let _ = write!(w, ", ");
         write_str_obj(w, "text", &r.text);
-        if with_points {
-            let _ = write!(w, ", \"points\": [");
-            for (j, (x, y)) in r.points.iter().enumerate() {
-                if j > 0 {
-                    let _ = write!(w, ", ");
-                }
-                let _ = write!(w, "[{x:.1}, {y:.1}]");
+        let _ = write!(w, ", \"points\": [");
+        for (j, (x, y)) in r.points.iter().enumerate() {
+            if j > 0 {
+                let _ = write!(w, ", ");
             }
-            let _ = write!(w, "]");
+            let _ = write!(w, "[{x:.1}, {y:.1}]");
         }
+        let _ = write!(w, "]");
         let _ = write!(w, "}}");
     }
     let _ = writeln!(w, "]}}]");
 }
 
-/// `tsv` — header row + one line per detection:
-///   `<file>\t<format>\t<text>\t<points-json>`
-/// The `points` column is empty unless `--points` is set.
-pub fn emit_tsv<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_points: bool) {
+/// `tsv` — three columns: `<file>\t<format>\t<text>`.
+/// Points are not emitted in TSV (no clean column shape for an
+/// arbitrary-length array); JSON is the format that carries them.
+pub fn emit_tsv<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
     let f = file.display().to_string();
     for r in results {
-        let points = if with_points {
-            let mut s = String::from("[");
-            for (j, (x, y)) in r.points.iter().enumerate() {
-                if j > 0 {
-                    s.push_str(", ");
-                }
-                s.push_str(&format!("[{x:.1}, {y:.1}]"));
-            }
-            s.push(']');
-            s
-        } else {
-            String::new()
-        };
         if let Err(e) = writeln!(
             w,
-            "{f}\t{}\t{}\t{}",
+            "{f}\t{}\t{}",
             format_name(r.format),
-            tsv_escape(&r.text),
-            points
+            tsv_escape(&r.text)
         ) {
             if e.kind() != std::io::ErrorKind::BrokenPipe {
                 panic!("stdout write failed: {e}");

@@ -8,7 +8,7 @@ Python、无需 OpenCV。
 
 ```
 $ zxing dec qr.png
-qr.png   QR   https://x-cmd.com
+qr.png   QR_CODE   https://x-cmd.com
 ```
 
 [zxing]: https://github.com/zxing/zxing
@@ -51,13 +51,15 @@ OPTIONS:
                          格式: qr, ean-13, ean-8, upc-a, upc-e,
                                code-128, code-39, code-93, codabar,
                                itf, pdf417, aztec, data-matrix, maxicode
-        --points         JSON/TSV 输出包含四角点坐标。
     -0, --null           输入路径用 NUL 分隔。
         --files-from <P> 从文件（或 stdin '-'）读取路径列表（一行一个）。
         -q, --quiet       抑制 per-file stderr 错误日志（脚本友好）。
     -h, --help           显示帮助。
     -V, --version        显示版本。
 ```
+
+`zxing dec <img>` 是规范形式 —— `dec` 是唯一的子命令（强制保留是为将来
+可能的专用子命令留位）。
 
 ### 示例
 
@@ -77,39 +79,35 @@ find . -name '*.png' -print0 | xargs -0 zxing dec --null --files-from -
 # 从 stdin 读取文件列表（chardet 风格）
 ls *.png | zxing dec --files-from -
 
-# 包含角点坐标（用于裁剪 / 调试）
-zxing dec --format json --points qr.png
-
 # 静默模式（脚本用，只看退出码）
 zxing dec --quiet bad.png || echo "没找到码"
 ```
 
 ### 输出格式
 
+JSON 输出里 `points` 字段总是出现（rxing 有就给，没有就是空数组）—— 没有
+`--points` flag 切换。
+
 **txt**（默认；tab 分隔，每个 detection 一行）:
 
 ```
-qr.png   QR   https://x-cmd.com
-multi.png QR  hello world
-multi.png EAN-13  4006381333931
+qr.png   QR_CODE   https://x-cmd.com
+multi.png QR_CODE   hello world
+multi.png EAN_13   4006381333931
 ```
 
-**json**（每个文件一项）:
-
-```json
-[{"file": "qr.png", "results": [{"format": "QR_CODE", "text": "https://x-cmd.com"}]}]
-```
-
-加 `--points`:
+**json**（每个文件一项；`points` 总是存在）:
 
 ```json
 [{"file": "qr.png", "results": [{"format": "QR_CODE", "text": "https://x-cmd.com", "points": [[40.5, 40.5], [250.5, 40.5], [40.5, 250.5], [250.5, 250.5]]}]}]
 ```
 
-**tsv**（无 header，三列）:
+rxing 不暴露 corner points 的格式（部分 1D），`points` 渲染成 `[]`。
+
+**tsv**（三列 —— 不带 points，没有干净的列形状）:
 
 ```
-qr.png   QR   https://x-cmd.com
+qr.png   QR_CODE   https://x-cmd.com
 ```
 
 ### 退出码
@@ -145,15 +143,16 @@ cargo zigbuild --release --target aarch64-pc-windows-gnu
 
 ```
 src/
-├── main.rs       — CLI 入口，手写参数解析
-├── decode.rs     — 包装 rxing helpers + DecodeHints
-│                   (filtered reader + try-harder + format filter)
-└── format.rs     — txt / json / tsv 序列化，全手写
+├── main.rs       — CLI 入口（薄壳，调 zxing::run()）
+├── lib.rs        — pub mod cli / decode / format
+├── cli.rs        — 手写参数解析 + 分发（无 clap，约 250 行）
+├── decode.rs     — 包装 rxing helpers（filtered + multi-detect，
+│                   DecodeHints、try-harder、format 过滤）
+└── format.rs     — txt / json / tsv，全手写
                     (不依赖 serde / json crate)
 ```
 
 CLI 故意避开 `clap` / `serde` / `serde_json`，保持 binary 小且依赖面可审计。
-参数解析 ~150 行；JSON 写 ~40 行。
 
 ## 协议
 
@@ -164,9 +163,34 @@ Apache-2.0。见 [LICENSE](LICENSE)。
 - [`image`](https://github.com/image-rs/image) (MIT OR Apache-2.0)
 - 原始 [ZXing](https://github.com/zxing/zxing) Java 库 (Apache-2.0)
 
-## 相关
+## 相关项目
 
-- [`ljh-sh/wxqr`](../wxqr) — 兄弟项目，用 WeChatCV 的 CNN-based QR 检测器处理
-  退化 / 模糊 / 反光图像（zxing 在这些场景会失效）。
-- `x-bash/qr` — x-cmd 模块，会把这个 binary 当本地 decode 后端（取代
-  `api.qrserver.com`）。
+- [`ljh-sh/wxqr`](../wxqr) — 兄弟项目，**用 CNN 检测器**
+  （WeChatCV WeChatQRCode，OpenCV contrib）处理退化 / 模糊 / 反光
+  图像（zxing 在这些场景会失效）。wxqr 是这个 CLI 返回 exit 1 时
+  推荐的 fallback。详见
+  [mneme/wxqr-design/README.md](https://github.com/ljh-sh/mneme/blob/main/wxqr-design/README.md)
+  解释为什么两个项目分开而不是合并。
+- `x-bash/qr` — x-cmd 模块，会用这两个 binary（zxing 快路径 +
+  wxqr fallback）作为本地 decode 后端（取代 `api.qrserver.com`）。
+  跟踪于 [x-cmd/x-cmd#467](https://github.com/x-cmd/x-cmd/issues/467)。
+
+### zxing vs wxqr 对比
+
+| | `ljh-sh/zxing` (本项目) | `ljh-sh/wxqr` |
+|---|---|---|
+| 算法 | ZXing (rxing) — 纯 Rust | WeChatCV WeChatQRCode — CNN (OpenCV) |
+| 子命令 | `dec`（强制） | `decode` 默认（`wxqr <img>` 直接工作） |
+| 格式覆盖 | QR + 1D (EAN/UPC/Code 128/…) | 仅 QR |
+| 模型 | 无 —— 算法自身 | ~1 MB WeChatCV Caffe 模型内嵌 |
+| 原生依赖 | 无 | OpenCV + bundled .dylib/.so |
+| Binary 大小 | ~1.7 MB (linux-musl) | ~10 MB + ~50 MB bundled libopencv |
+| 冷启动开销 | 无 | ~500 ms（模型加载） |
+| 典型解码速度 | ~30 ms / 张 | ~30-300 ms / 张（CNN） |
+| 最擅长场景 | 清洁 / 标准条码 | 模糊、反光、褶皱、极小、低对比度 |
+
+两个后端输出 **字节兼容的 JSON**，调度层可以无差别扇出：
+
+```sh
+x qr dec <img>   # zxing 先试，wxqr 兜底 —— 见 x-cmd/x-cmd#467
+```
