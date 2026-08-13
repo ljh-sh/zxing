@@ -9,9 +9,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use rxing::helpers::{
-    detect_in_file_filtered_with_hints, detect_multiple_in_file_with_hints,
-};
+use rxing::helpers::{detect_in_file_filtered_with_hints, detect_multiple_in_file_with_hints};
 use rxing::{BarcodeFormat, DecodeHints};
 
 #[derive(Debug, Clone)]
@@ -72,8 +70,7 @@ pub fn decode_path(path: &Path, opts: &DecodeOptions, quiet: bool) -> Result<Vec
                 }
                 all
             }
-            None => match detect_in_file_filtered_with_hints(path_str, None, &mut hints.clone())
-            {
+            None => match detect_in_file_filtered_with_hints(path_str, None, &mut hints.clone()) {
                 Ok(r) => vec![r],
                 Err(rxing::Exceptions::NotFoundException(_)) => Vec::new(),
                 Err(e) => {
@@ -96,11 +93,7 @@ pub fn decode_path(path: &Path, opts: &DecodeOptions, quiet: bool) -> Result<Vec
     Ok(results
         .into_iter()
         .map(|r| {
-            let points = r
-                .getPoints()
-                .iter()
-                .map(|p| (p.x, p.y))
-                .collect::<Vec<_>>();
+            let points = r.getPoints().iter().map(|p| (p.x, p.y)).collect::<Vec<_>>();
             Decoded {
                 format: *r.getBarcodeFormat(),
                 text: r.getText().to_owned(),
@@ -111,8 +104,10 @@ pub fn decode_path(path: &Path, opts: &DecodeOptions, quiet: bool) -> Result<Vec
 }
 
 fn build_hints(opts: &DecodeOptions) -> Result<DecodeHints> {
-    let mut hints = DecodeHints::default();
-    hints.TryHarder = Some(opts.try_harder);
+    let mut hints = DecodeHints {
+        TryHarder: Some(opts.try_harder),
+        ..DecodeHints::default()
+    };
 
     if !opts.only.is_empty() {
         let mut set: HashSet<BarcodeFormat> = HashSet::new();

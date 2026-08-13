@@ -42,12 +42,7 @@ pub fn emit_txt<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
 ///
 /// With `--points`, each result gains a `"points"` field:
 /// `"points": [[x, y], [x, y], [x, y], [x, y]]`.
-pub fn emit_json<W: Write>(
-    w: &mut W,
-    file: &Path,
-    results: &[Decoded],
-    with_points: bool,
-) {
+pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_points: bool) {
     let f = file.display().to_string();
     // We hand-write JSON because we want stable formatting and zero
     // dependencies. Every text and file string is escaped properly.
@@ -80,12 +75,7 @@ pub fn emit_json<W: Write>(
 /// `tsv` — header row + one line per detection:
 ///   `<file>\t<format>\t<text>\t<points-json>`
 /// The `points` column is empty unless `--points` is set.
-pub fn emit_tsv<W: Write>(
-    w: &mut W,
-    file: &Path,
-    results: &[Decoded],
-    with_points: bool,
-) {
+pub fn emit_tsv<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_points: bool) {
     let f = file.display().to_string();
     for r in results {
         let points = if with_points {
@@ -118,7 +108,9 @@ pub fn emit_tsv<W: Write>(
 fn tsv_escape(s: &str) -> String {
     // Replace tabs and newlines with their literal escape so each row
     // stays a single TSV line. Other control chars are left alone.
-    s.replace('\t', "\\t").replace('\n', "\\n").replace('\r', "\\r")
+    s.replace('\t', "\\t")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 fn write_str_obj<W: Write>(w: &mut W, key: &str, val: &str) {
