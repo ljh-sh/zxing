@@ -46,7 +46,7 @@ pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded], with_poi
     let f = file.display().to_string();
     // We hand-write JSON because we want stable formatting and zero
     // dependencies. Every text and file string is escaped properly.
-    let _ = write!(w, "[");
+    let _ = write!(w, "[{{");
     write_str_obj(w, "file", &f);
     let _ = write!(w, ", \"results\": [");
     for (i, r) in results.iter().enumerate() {
