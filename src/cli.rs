@@ -14,7 +14,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::decode::{Decoded, DecodeOptions};
+use crate::decode::{DecodeOptions, Decoded};
 use crate::format::{emit_json, emit_tsv, emit_txt};
 
 pub const VERSION_INFO: &str = concat!(
@@ -280,13 +280,7 @@ fn run_dec(args: DecArgs) -> ExitCode {
     }
 }
 
-fn emit<W: Write>(
-    w: &mut W,
-    fmt: FormatKind,
-    path: &Path,
-    results: &[Decoded],
-    with_points: bool,
-) {
+fn emit<W: Write>(w: &mut W, fmt: FormatKind, path: &Path, results: &[Decoded], with_points: bool) {
     match fmt {
         FormatKind::Txt => emit_txt(w, path, results),
         FormatKind::Json => emit_json(w, path, results, with_points),

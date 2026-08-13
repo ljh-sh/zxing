@@ -8,5 +8,5 @@ pub mod decode;
 pub mod format;
 
 pub use cli::{run, VERSION_INFO};
-pub use decode::{format_name, Decoded, DecodeOptions};
+pub use decode::{format_name, DecodeOptions, Decoded};
 pub use format::{emit_json, emit_tsv, emit_txt};
