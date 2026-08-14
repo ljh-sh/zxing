@@ -18,7 +18,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::decode::{Decoded, DecodeOptions};
+use crate::decode::{DecodeOptions, Decoded};
 use crate::format::{emit_json, emit_tsv, emit_txt};
 
 pub const VERSION_INFO: &str = concat!(

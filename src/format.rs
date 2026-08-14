@@ -78,12 +78,7 @@ pub fn emit_json<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
 pub fn emit_tsv<W: Write>(w: &mut W, file: &Path, results: &[Decoded]) {
     let f = file.display().to_string();
     for r in results {
-        if let Err(e) = writeln!(
-            w,
-            "{f}\t{}\t{}",
-            format_name(r.format),
-            tsv_escape(&r.text)
-        ) {
+        if let Err(e) = writeln!(w, "{f}\t{}\t{}", format_name(r.format), tsv_escape(&r.text)) {
             if e.kind() != std::io::ErrorKind::BrokenPipe {
                 panic!("stdout write failed: {e}");
             }
